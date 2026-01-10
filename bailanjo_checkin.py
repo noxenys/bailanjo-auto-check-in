@@ -1,0 +1,344 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Bailanjo.top 自动签到脚本 Plus 版（多渠道推送，余额增量解析）
+- 自动：打开用户页 → 输入账号/密码 → 查询 → 签到 → 自动确认弹窗
+- 解析：从弹窗文本中解析本次余额增加金额（例如："余额增加0.026元"）
+- 推送：Telegram / Server酱 / PushPlus / Bark / Discord / 飞书 / 钉钉 / 企业微信
+- 运行：本地、GitHub Actions、青龙（QL）均可
+
+使用示例：
+  pip install playwright httpx
+  python -m playwright install chromium
+  BAILANJO_ACCOUNT=你的账号 BAILANJO_PASSWORD=你的密码 python bailanjo_checkin_plus.py
+
+环境变量（可选）：
+  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+  SERVERCHAN_SENDKEY
+  PUSHPLUS_TOKEN
+  BARK_URL (例如 https://api.day.app/KEY)
+  DISCORD_WEBHOOK_URL
+  FEISHU_WEBHOOK_URL
+  DINGTALK_WEBHOOK_URL
+  WECHAT_WORK_WEBHOOK_URL
+"""
+
+import os
+import sys
+import time
+import json
+import re
+import argparse
+import httpx
+from datetime import datetime
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+
+USER_URL = "https://bailanjo.top/user"
+
+# 选择器
+SEL_ACCOUNT = "input[placeholder='在此填写你的账号:)']"
+SEL_PASSWORD = "input[placeholder='在此填写你的密码:)']"
+BTN_QUERY = "text=查询"
+BTN_SIGNIN = "text=签到"
+TEXT_UID = "text=UID:"
+TEXT_BALANCE_LABEL = "text=余额:"
+
+# 推送渠道环境变量
+ENV_TG_TOKEN = "TELEGRAM_BOT_TOKEN"
+ENV_TG_CHAT = "TELEGRAM_CHAT_ID"
+ENV_SC_KEY = "SERVERCHAN_SENDKEY"
+ENV_PP_TOKEN = "PUSHPLUS_TOKEN"
+ENV_BARK_URL = "BARK_URL"
+ENV_DISCORD = "DISCORD_WEBHOOK_URL"
+ENV_FEISHU = "FEISHU_WEBHOOK_URL"
+ENV_DINGTALK = "DINGTALK_WEBHOOK_URL"
+ENV_WEWORK = "WECHAT_WORK_WEBHOOK_URL"
+
+
+def parse_added_amount(msg: str) -> str:
+    """从弹窗消息中解析余额增量，例如“余额增加0.026元:D”。
+    返回字符串形式的数值（如 "0.026"），若未解析则返回空串。
+    """
+    if not msg:
+        return ""
+    # 常见提示："签到成功，余额增加0.026元:D"
+    m = re.search(r"余额(?:增加|加)[^\d]*([0-9]+(?:\.[0-9]+)?)元", msg)
+    if m:
+        return m.group(1)
+    # 兜底：抓取第一个带小数或整数的数值
+    m2 = re.search(r"([0-9]+(?:\.[0-9]+)?)", msg)
+    return m2.group(1) if m2 else ""
+
+
+# 推送函数们
+async def _post_json(url: str, data: dict) -> bool:
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.post(url, json=data)
+            return r.status_code in (200, 201, 202)
+    except Exception:
+        return False
+
+async def _post_form(url: str, data: dict) -> bool:
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.post(url, data=data)
+            return r.status_code in (200, 201, 202)
+    except Exception:
+        return False
+
+async def push_telegram(token: str, chat_id: str, text: str) -> bool:
+    if not token or not chat_id:
+        return False
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    return await _post_form(url, {"chat_id": chat_id, "text": text})
+
+async def push_serverchan(sendkey: str, title: str, desp: str) -> bool:
+    if not sendkey:
+        return False
+    url = f"https://sctapi.ftqq.com/{sendkey}.send"
+    return await _post_form(url, {"title": title, "desp": desp})
+
+async def push_pushplus(token: str, title: str, content: str) -> bool:
+    if not token:
+        return False
+    url = "https://www.pushplus.plus/send"
+    return await _post_form(url, {"token": token, "title": title, "content": content})
+
+async def push_bark(server_url: str, title: str, body: str) -> bool:
+    if not server_url:
+        return False
+    # 兼容 server_url 末尾不带斜杠
+    if server_url.endswith("/"):
+        url = server_url + title + "/" + body
+    else:
+        url = server_url + "/" + title + "/" + body
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(url)
+            return r.status_code in (200, 201)
+    except Exception:
+        return False
+
+async def push_discord(webhook: str, text: str) -> bool:
+    if not webhook:
+        return False
+    return await _post_json(webhook, {"content": text})
+
+async def push_feishu(webhook: str, text: str) -> bool:
+    if not webhook:
+        return False
+    data = {"msg_type": "text", "content": {"text": text}}
+    return await _post_json(webhook, data)
+
+async def push_dingtalk(webhook: str, text: str) -> bool:
+    if not webhook:
+        return False
+    data = {"msgtype": "text", "text": {"content": text}}
+    return await _post_json(webhook, data)
+
+async def push_wework(webhook: str, text: str) -> bool:
+    if not webhook:
+        return False
+    data = {"msgtype": "text", "text": {"content": text}}
+    return await _post_json(webhook, data)
+
+
+def extract_balance(page) -> str:
+    try:
+        full_text = page.inner_text("body")
+        idx = full_text.find("余额:")
+        if idx != -1:
+            tail = full_text[idx + len("余额:"):]
+            first_line = tail.splitlines()[0].strip()
+            bal = first_line.split()[0]
+            return bal
+    except Exception:
+        pass
+    return ""
+
+
+def run_checkin(account: str, password: str, headless: bool = True) -> dict:
+    result = {"ok": False, "message": "", "balance": "", "added": "", "signed": False}
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=headless)
+        context = browser.new_context()
+        page = context.new_page()
+
+        dialog_message = None
+
+        def on_dialog(dialog):
+            nonlocal dialog_message
+            dialog_message = dialog.message
+            dialog.accept()
+
+        page.on("dialog", on_dialog)
+
+        try:
+            page.goto(USER_URL, timeout=30000)
+            page.fill(SEL_ACCOUNT, account)
+            page.fill(SEL_PASSWORD, password)
+            page.get_by_text("查询", exact=True).click()
+            page.wait_for_selector(TEXT_UID, timeout=15000)
+
+            balance_before = extract_balance(page)
+            page.get_by_text("签到", exact=True).click()
+            time.sleep(2)
+            balance_after = extract_balance(page)
+
+            msg = dialog_message or ""
+            result["message"] = msg or "已触发签到。"
+
+            if msg:
+                if "签到成功" in msg:
+                    result["ok"] = True
+                    result["signed"] = True
+                elif "已签到" in msg or "重复" in msg:
+                    result["ok"] = True
+                    result["signed"] = False
+                else:
+                    result["ok"] = True
+            else:
+                result["ok"] = True
+
+            result["balance"] = balance_after or balance_before
+            result["added"] = parse_added_amount(msg)
+
+        except PlaywrightTimeoutError:
+            result["ok"] = False
+            result["message"] = "页面超时或元素未找到"
+        except Exception as e:
+            result["ok"] = False
+            result["message"] = f"异常: {e}"
+        finally:
+            context.close()
+            browser.close()
+
+    return result
+
+
+def build_text(res: dict) -> str:
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    status = "成功" if res.get("ok") else "失败"
+    signed = "本次签到" if res.get("signed") else "已签到过/触发签到"
+    added = res.get("added") or "-"
+    bal = res.get("balance") or "-"
+    msg = res.get("message") or ""
+    return (
+        f"[bailanjo] {status}\n"
+        f"时间: {ts}\n"
+        f"状态: {signed}\n"
+        f"增加: {added} 元\n"
+        f"余额: {bal}\n"
+        f"提示: {msg}"
+    )
+
+
+async def push_all(res: dict, override_token: str = "", override_chat_id: str = "") -> None:
+    """并发推送到所有已配置渠道。
+    支持传入 Telegram 的覆盖 token/chat_id，以便多账号并行时区分接收者。
+    """
+    text = build_text(res)
+    title = "bailanjo 签到通知"
+
+    # 优先使用覆盖值，其次读取环境变量（兼容多种命名）
+    tg_token = override_token or os.getenv(ENV_TG_TOKEN, "") or os.getenv("TG_BOT_TOKEN", "")
+    tg_chat = override_chat_id or os.getenv(ENV_TG_CHAT, "") or os.getenv("TG_USER_ID", "") or os.getenv("TG_CHAT_ID", "")
+    sc_key = os.getenv(ENV_SC_KEY, "")
+    pp_token = os.getenv(ENV_PP_TOKEN, "")
+    bark_url = os.getenv(ENV_BARK_URL, "")
+    discord = os.getenv(ENV_DISCORD, "")
+    feishu = os.getenv(ENV_FEISHU, "")
+    dingtalk = os.getenv(ENV_DINGTALK, "")
+    wework = os.getenv(ENV_WEWORK, "")
+
+    tasks = []
+    if tg_token and tg_chat:
+        tasks.append(push_telegram(tg_token, tg_chat, text))
+    if sc_key:
+        tasks.append(push_serverchan(sc_key, title, text))
+    if pp_token:
+        tasks.append(push_pushplus(pp_token, title, text))
+    if bark_url:
+        tasks.append(push_bark(bark_url, title, text))
+    if discord:
+        tasks.append(push_discord(discord, text))
+    if feishu:
+        tasks.append(push_feishu(feishu, text))
+    if dingtalk:
+        tasks.append(push_dingtalk(dingtalk, text))
+    if wework:
+        tasks.append(push_wework(wework, text))
+
+    if tasks:
+        import asyncio
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="bailanjo.top 自动签到 Plus（支持多账号 JSON 批量）")
+    parser.add_argument("--account", default=os.getenv("BAILANJO_ACCOUNT", ""))
+    parser.add_argument("--password", default=os.getenv("BAILANJO_PASSWORD", ""))
+    parser.add_argument("--headless", action="store_true", help="无头浏览器运行")
+    args = parser.parse_args()
+
+    # 多账号 JSON：如果提供 ACCOUNTS_JSON / PASSWORDS_JSON，则按列表循环执行
+    accounts_json = os.getenv("ACCOUNTS_JSON", os.getenv("BAILANJO_ACCOUNTS_JSON", ""))
+    passwords_json = os.getenv("PASSWORDS_JSON", os.getenv("BAILANJO_PASSWORDS_JSON", ""))
+    chatids_json = os.getenv("TELEGRAM_CHAT_IDS_JSON", "")
+
+    batch_mode = False
+    acc_list, pwd_list, chat_list = [], [], []
+    if accounts_json and passwords_json:
+        try:
+            acc_list = json.loads(accounts_json)
+            pwd_list = json.loads(passwords_json)
+            chat_list = json.loads(chatids_json) if chatids_json else []
+            # 仅当长度匹配且非空时启用批量模式
+            if isinstance(acc_list, list) and isinstance(pwd_list, list) and len(acc_list) == len(pwd_list) and len(acc_list) > 0:
+                batch_mode = True
+        except Exception:
+            batch_mode = False
+
+    import asyncio
+
+    if batch_mode:
+        # 并行执行：每个账号独立创建任务，失败不影响其他推送
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def worker(idx: int, u: str, p: str, chat_override: str = ""):
+            try:
+                res = run_checkin(account=str(u), password=str(p), headless=args.headless or True)
+            except Exception as e:
+                # 单账号失败也要尽量推送失败报告
+                res = {"ok": False, "message": f"异常: {e}", "balance": "", "added": "", "signed": False}
+            # 输出结果（携带索引）
+            print(json.dumps({"index": idx, **res}, ensure_ascii=False))
+            # 推送（独立覆盖 chat id，避免互相影响）
+            import asyncio
+            asyncio.run(push_all(res, override_chat_id=chat_override))
+            return res
+
+        max_workers = min(len(acc_list), 4)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            for i, (u, p) in enumerate(zip(acc_list, pwd_list), start=1):
+                chat_override = ""
+                if chat_list and i-1 < len(chat_list) and chat_list[i-1]:
+                    chat_override = str(chat_list[i-1])
+                futures.append(executor.submit(worker, i, u, p, chat_override))
+            for _ in as_completed(futures):
+                pass
+    else:
+        if not args.account or not args.password:
+            print("请提供账号与密码（环境变量或命令行参数）")
+            sys.exit(2)
+        res = run_checkin(account=args.account, password=args.password, headless=args.headless or True)
+        print(json.dumps(res, ensure_ascii=False))
+        import asyncio
+        asyncio.run(push_all(res))
+
+
+if __name__ == "__main__":
+    main()

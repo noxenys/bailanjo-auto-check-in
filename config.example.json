@@ -1,0 +1,35 @@
+{
+  "accounts": [
+    {
+      "account": "your_account_1",
+      "password": "your_password_1",
+      "telegram_chat_id": "1234567890",
+      "enabled": true
+    },
+    {
+      "account": "your_account_2", 
+      "password": "your_password_2",
+      "telegram_chat_id": "0987654321",
+      "enabled": true
+    }
+  ],
+  "push_settings": {
+    "telegram": {
+      "bot_token": "your_bot_token_here",
+      "enabled": true
+    },
+    "serverchan": {
+      "sendkey": "your_sendkey_here",
+      "enabled": false
+    },
+    "pushplus": {
+      "token": "your_token_here", 
+      "enabled": false
+    }
+  },
+  "settings": {
+    "headless": true,
+    "timeout": 30000,
+    "max_workers": 3
+  }
+}

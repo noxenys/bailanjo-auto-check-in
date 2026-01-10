@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# 青龙（QL）任务示例：在 QL 中添加此脚本为定时任务
+# 依赖：Python3、可联网环境
+
+# 安装依赖（只需首次或依赖缺失时执行）
+pip install -q playwright httpx || true
+python -m playwright install chromium || true
+
+# 读取 QL 面板中配置的环境变量（在面板里新增同名变量即可）
+ACCOUNT="${BAILANJO_ACCOUNT}"
+PASSWORD="${BAILANJO_PASSWORD}"
+
+# 可选推送变量（在 QL 面板里新增即可生效）
+TG_TOKEN="${TELEGRAM_BOT_TOKEN}"
+TG_CHAT="${TELEGRAM_CHAT_ID}"
+SC_KEY="${SERVERCHAN_SENDKEY}"
+PP_TOKEN="${PUSHPLUS_TOKEN}"
+BARK_URL="${BARK_URL}"
+DISCORD="${DISCORD_WEBHOOK_URL}"
+FEISHU="${FEISHU_WEBHOOK_URL}"
+DINGTALK="${DINGTALK_WEBHOOK_URL}"
+WEWORK="${WECHAT_WORK_WEBHOOK_URL}"
+
+# 运行（无头模式）
+BAILANJO_ACCOUNT="$ACCOUNT" \
+BAILANJO_PASSWORD="$PASSWORD" \
+TELEGRAM_BOT_TOKEN="$TG_TOKEN" \
+TELEGRAM_CHAT_ID="$TG_CHAT" \
+SERVERCHAN_SENDKEY="$SC_KEY" \
+PUSHPLUS_TOKEN="$PP_TOKEN" \
+BARK_URL="$BARK_URL" \
+DISCORD_WEBHOOK_URL="$DISCORD" \
+FEISHU_WEBHOOK_URL="$FEISHU" \
+DINGTALK_WEBHOOK_URL="$DINGTALK" \
+WECHAT_WORK_WEBHOOK_URL="$WEWORK" \
+python /ql/scripts/bailanjo_checkin.py --headless
