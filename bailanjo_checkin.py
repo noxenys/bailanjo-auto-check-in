@@ -220,18 +220,25 @@ def run_checkin(account: str, password: str, headless: bool = True) -> dict:
 
 def build_text(res: dict) -> str:
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    status = "成功" if res.get("ok") else "失败"
+    status = "✅ 成功" if res.get("ok") else "❌ 失败"
     signed = "本次签到" if res.get("signed") else "已签到过/触发签到"
     added = res.get("added") or "-"
     bal = res.get("balance") or "-"
     msg = res.get("message") or ""
+    
+    # 标题用英文，内容保持中文
     return (
-        f"[bailanjo] {status}\n"
-        f"时间: {ts}\n"
-        f"状态: {signed}\n"
-        f"增加: {added} 元\n"
-        f"余额: {bal}\n"
-        f"提示: {msg}"
+        f"🚀 **Bailanjo Auto Check-in Notification**\n"
+        f"\n"
+        f"📊 **签到状态**: {status}\n"
+        f"⏰ **执行时间**: {ts}\n"
+        f"🔔 **签到类型**: {signed}\n"
+        f"💰 **余额增加**: {added} 元\n"
+        f"💳 **当前余额**: {bal}\n"
+        f"📝 **详细信息**: {msg}\n"
+        f"\n"
+        f"---\n"
+        f"💡 Sent by bailanjo-auto-checkin"
     )
 
 
@@ -253,27 +260,77 @@ async def push_all(res: dict, override_token: str = "", override_chat_id: str = 
     dingtalk = os.getenv(ENV_DINGTALK, "")
     wework = os.getenv(ENV_WEWORK, "")
 
+    # 记录推送渠道配置状态
+    channels = []
+    if tg_token and tg_chat:
+        channels.append("Telegram")
+    if sc_key:
+        channels.append("Server酱")
+    if pp_token:
+        channels.append("PushPlus")
+    if bark_url:
+        channels.append("Bark")
+    if discord:
+        channels.append("Discord")
+    if feishu:
+        channels.append("飞书")
+    if dingtalk:
+        channels.append("钉钉")
+    if wework:
+        channels.append("企业微信")
+
+    if channels:
+        print(f"推送渠道已配置: {', '.join(channels)}")
+    else:
+        print("未配置任何推送渠道，跳过推送")
+        return
+
     tasks = []
+    channel_names = []
+    
     if tg_token and tg_chat:
         tasks.append(push_telegram(tg_token, tg_chat, text))
+        channel_names.append("Telegram")
     if sc_key:
         tasks.append(push_serverchan(sc_key, title, text))
+        channel_names.append("Server酱")
     if pp_token:
         tasks.append(push_pushplus(pp_token, title, text))
+        channel_names.append("PushPlus")
     if bark_url:
         tasks.append(push_bark(bark_url, title, text))
+        channel_names.append("Bark")
     if discord:
         tasks.append(push_discord(discord, text))
+        channel_names.append("Discord")
     if feishu:
         tasks.append(push_feishu(feishu, text))
+        channel_names.append("飞书")
     if dingtalk:
         tasks.append(push_dingtalk(dingtalk, text))
+        channel_names.append("钉钉")
     if wework:
         tasks.append(push_wework(wework, text))
+        channel_names.append("企业微信")
 
     if tasks:
         import asyncio
-        await asyncio.gather(*tasks, return_exceptions=True)
+        print(f"开始推送至 {len(tasks)} 个渠道...")
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # 记录推送结果
+        success_count = 0
+        for i, result in enumerate(results):
+            channel = channel_names[i]
+            if isinstance(result, Exception):
+                print(f"❌ {channel} 推送失败: {result}")
+            elif result:
+                print(f"✅ {channel} 推送成功")
+                success_count += 1
+            else:
+                print(f"❌ {channel} 推送失败")
+        
+        print(f"推送完成: {success_count}/{len(tasks)} 个渠道成功")
 
 
 def main():

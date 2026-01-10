@@ -1,4 +1,4 @@
-name: Bailanjo Daily Check-in
+name: Bailanjo Daily Auto Check-in
 
 on:
   schedule:
@@ -36,4 +36,4 @@ jobs:
           DINGTALK_WEBHOOK_URL: ${{ secrets.DINGTALK_WEBHOOK_URL }}
           WECHAT_WORK_WEBHOOK_URL: ${{ secrets.WECHAT_WORK_WEBHOOK_URL }}
         run: |
-          python bailanjo_checkin_plus.py --headless
+          python bailanjo_checkin.py --headless
