@@ -61,36 +61,7 @@ export BAILANJO_ACCOUNT="你的账号"
 export BAILANJO_PASSWORD="你的密码"
 python bailanjo_checkin.py --headless
 ```
-3) 多账号批量（并行，失败不影响其他账号）
-示例：同时跑两个账号，并把它们分别推送到不同 Telegram Chat。
-```bash
-# 账号与密码（JSON 数组，顺序一一对应）
-export ACCOUNTS_JSON='["us******123","an******456"]'
-export PASSWORDS_JSON='["P@******123","Q#******456"]'
 
-# 可选：为不同账号设置不同接收者（个人ID为正数，群组ID通常为负数）
-export TELEGRAM_CHAT_IDS_JSON='["1234567890","-9876543210"]'
-
-# 运行（每个账号并行执行，独立推送与日志输出）
-python bailanjo_checkin.py --headless
-```
-运行后日志示例（每个账号各自一行 JSON 结果）：
-```json
-{"index": 1, "ok": true, "message": "签到成功，余额增加0.026元", "balance": "4.402元", "added": "0.026", "signed": true}
-{"index": 2, "ok": true, "message": "今日已签到，请勿重复签到！", "balance": "3.100元", "added": "-", "signed": false}
-```
-说明：
-- `index` 表示账号序号（与 JSON 中的顺序一致）。
-- 单个账号失败也会独立推送失败信息；其他账号照常完成。
-- 未设置 `TELEGRAM_CHAT_IDS_JSON` 时，所有账号使用同一个 `TELEGRAM_CHAT_ID`。
-
-Windows PowerShell 示例：
-```powershell
-$env:ACCOUNTS_JSON='["us******123","an******456"]'
-$env:PASSWORDS_JSON='["P@******123","Q#******456"]'
-$env:TELEGRAM_CHAT_IDS_JSON='["1234567890","-9876543210"]'
-python bailanjo_checkin.py --headless
-```
 
 ---
 
@@ -115,9 +86,8 @@ python bailanjo_checkin.py --headless
 - `DINGTALK_WEBHOOK_URL`
 - `WECHAT_WORK_WEBHOOK_URL`
 
-多账号（二选一）：
+多账号：
 - 矩阵方式：为每个账号建立独立 Secrets（如 `BAILANJO_ACCOUNT_1/2...`、`BAILANJO_PASSWORD_1/2...`）并使用矩阵工作流
-- JSON 批量方式：设置 `ACCOUNTS_JSON`、`PASSWORDS_JSON`，可选 `TELEGRAM_CHAT_IDS_JSON`
 
 ### 基础工作流（已内置）
 `.github/workflows/bailanjo_checkin.yml` 内容示例：
@@ -156,24 +126,7 @@ jobs:
           python bailanjo_checkin.py --headless
 ```
 
-### 并行批量（JSON 方式）
-将多个账号以 JSON 形式保存为 Secrets：
-- `ACCOUNTS_JSON`：如 `["us******123","an******456"]`
-- `PASSWORDS_JSON`：如 `["P@******123","Q#******456"]`
-- 可选 `TELEGRAM_CHAT_IDS_JSON`：如 `["1396097092","-5220384969"]`
 
-工作流中注入这些 Secrets 即可，`bailanjo_checkin.py` 会自动并行执行并独立推送。
-```yaml
-- name: Run batch check-in (JSON)
-  env:
-    ACCOUNTS_JSON: ${{ secrets.ACCOUNTS_JSON }}
-    PASSWORDS_JSON: ${{ secrets.PASSWORDS_JSON }}
-    TELEGRAM_CHAT_IDS_JSON: ${{ secrets.TELEGRAM_CHAT_IDS_JSON }}
-    TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-    TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-  run: |
-    python bailanjo_checkin.py --headless
-```
 
 ### 并行批量（矩阵方式）
 示例：两个账号独立 Secrets，使用矩阵运行（每个 Job 环境隔离）：
@@ -220,14 +173,14 @@ jobs:
 ## 青龙（QL）
 - 将 `bailanjo_checkin.py` 放到 `/ql/scripts/`
 - 单账号：设置 `BAILANJO_ACCOUNT`、`BAILANJO_PASSWORD` 与可选推送变量；执行 `ql_bailanjo.sh`
-- 多账号：设置 `ACCOUNTS_JSON`、`PASSWORDS_JSON`，在脚本内循环执行（串行更稳）
+- 多账号：为每个账号建立独立 Secrets（如 `BAILANJO_ACCOUNT_1/2...`、`BAILANJO_PASSWORD_1/2...`），在脚本内循环执行
 
 ---
 
 ## Telegram 推送配置（简版）
 - Bot Token：用 @BotFather 创建，得到 `TELEGRAM_BOT_TOKEN`（兼容 `TG_BOT_TOKEN`）
 - Chat ID：私聊机器人后用 `getUpdates` 或 @userinfobot 获得；个人为正数，如 `1396097092`；群组通常为负数，如 `-5220384969`
-- 将以上写入 Secrets 即可；并行批量时可用 `TELEGRAM_CHAT_IDS_JSON` 为每个账号指定不同接收者。
+- 将以上写入 Secrets 即可。
 
 ---
 
@@ -272,8 +225,8 @@ python bailanjo_checkin.py --headless
 
 ### Q: 多账号如何配置？
 **A:** 
-- 推荐使用 JSON 格式批量配置
-- 每个账号可以设置独立的推送接收者
+- 推荐使用矩阵方式配置
+- 为每个账号建立独立 Secrets（如 `BAILANJO_ACCOUNT_1/2...`、`BAILANJO_PASSWORD_1/2...`）
 - 支持并行执行，失败互不影响
 
 ## 🔄 更新日志
