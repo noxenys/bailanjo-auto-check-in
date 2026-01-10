@@ -10,7 +10,7 @@ Bailanjo.top 自动签到脚本 Plus 版（多渠道推送，余额增量解析�
 使用示例：
   pip install playwright httpx
   python -m playwright install chromium
-  BAILANJO_ACCOUNT=你的账号 BAILANJO_PASSWORD=你的密码 python bailanjo_checkin_plus.py
+  BAILANJO_ACCOUNT=你的账号 BAILANJO_PASSWORD=你的密码 python bailanjo_checkin.py
 
 环境变量（可选）：
   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID

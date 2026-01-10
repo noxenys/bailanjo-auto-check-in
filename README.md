@@ -24,7 +24,6 @@ bailanjo-auto-checkin/
 ├── .github/workflows/
 │   └── bailanjo_checkin.yml     # GitHub Actions 工作流
 ├── requirements.txt             # Python 依赖
-├── config.example.json         # 配置文件示例
 ├── .gitignore                  # Git 忽略文件
 └── README.md                   # 项目说明
 ```
@@ -35,15 +34,18 @@ bailanjo-auto-checkin/
 
 ## 📋 目录
 
-- [特性](#✨-特性)
-- [快速开始](#📦-快速开始)
-- [本地部署](#🏠-本地部署)
-- [GitHub Actions](#⚙️-github-actions)
-- [青龙面板](#🐉-青龙面板)
-- [推送配置](#📱-推送配置)
-- [配置文件](#⚙️-配置文件)
-- [常见问题](#❓-常见问题)
-- [许可证](#📄-许可证)
+- [✨ 特性](#-特性)
+- [📁 项目结构](#-项目结构)
+- [📦 快速开始](#-快速开始)
+- [🏠 本地部署](#-本地部署)
+- [⚙️ GitHub Actions](#github-actions推荐-fork-使用)
+- [🐉 青龙面板](#青龙ql)
+- [📱 Telegram 推送配置](#telegram-推送配置简版)
+- [🔒 隐私与安全](#隐私与安全)
+- [❓ 常见问题](#-常见问题)
+- [🔄 更新日志](#-更新日志)
+- [🤝 贡献](#-贡献)
+- [📄 许可证](#-许可证)
 
 ---
 
@@ -57,7 +59,7 @@ python -m playwright install chromium
 ```bash
 export BAILANJO_ACCOUNT="你的账号"
 export BAILANJO_PASSWORD="你的密码"
-python bailanjo_checkin_plus.py --headless
+python bailanjo_checkin.py --headless
 ```
 3) 多账号批量（并行，失败不影响其他账号）
 示例：同时跑两个账号，并把它们分别推送到不同 Telegram Chat。
@@ -70,7 +72,7 @@ export PASSWORDS_JSON='["P@******123","Q#******456"]'
 export TELEGRAM_CHAT_IDS_JSON='["1234567890","-9876543210"]'
 
 # 运行（每个账号并行执行，独立推送与日志输出）
-python bailanjo_checkin_plus.py --headless
+python bailanjo_checkin.py --headless
 ```
 运行后日志示例（每个账号各自一行 JSON 结果）：
 ```json
@@ -87,7 +89,7 @@ Windows PowerShell 示例：
 $env:ACCOUNTS_JSON='["us******123","an******456"]'
 $env:PASSWORDS_JSON='["P@******123","Q#******456"]'
 $env:TELEGRAM_CHAT_IDS_JSON='["1234567890","-9876543210"]'
-python bailanjo_checkin_plus.py --headless
+python bailanjo_checkin.py --headless
 ```
 
 ---
@@ -145,13 +147,13 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
-          BARK_URL: ${{ secrets:BARK_URL }}
+          BARK_URL: ${{ secrets.BARK_URL }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
           DINGTALK_WEBHOOK_URL: ${{ secrets.DINGTALK_WEBHOOK_URL }}
           WECHAT_WORK_WEBHOOK_URL: ${{ secrets.WECHAT_WORK_WEBHOOK_URL }}
         run: |
-          python bailanjo_checkin_plus.py --headless
+          python bailanjo_checkin.py --headless
 ```
 
 ### 并行批量（JSON 方式）
@@ -160,7 +162,7 @@ jobs:
 - `PASSWORDS_JSON`：如 `["P@******123","Q#******456"]`
 - 可选 `TELEGRAM_CHAT_IDS_JSON`：如 `["1396097092","-5220384969"]`
 
-工作流中注入这些 Secrets 即可，`bailanjo_checkin_plus.py` 会自动并行执行并独立推送。
+工作流中注入这些 Secrets 即可，`bailanjo_checkin.py` 会自动并行执行并独立推送。
 ```yaml
 - name: Run batch check-in (JSON)
   env:
@@ -170,7 +172,7 @@ jobs:
     TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
     TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
   run: |
-    python bailanjo_checkin_plus.py --headless
+    python bailanjo_checkin.py --headless
 ```
 
 ### 并行批量（矩阵方式）
@@ -210,15 +212,15 @@ jobs:
           echo "Processing account index: $IDX"
           export BAILANJO_ACCOUNT=$(eval echo "\$BAILANJO_ACCOUNT_${IDX}")
           export BAILANJO_PASSWORD=$(eval echo "\$BAILANJO_PASSWORD_${IDX}")
-          python bailanjo_checkin_plus.py --headless
+          python bailanjo_checkin.py --headless
 ```
 
 ---
 
 ## 青龙（QL）
-- 将 `bailanjo_checkin_plus.py` 放到 `/ql/scripts/`
+- 将 `bailanjo_checkin.py` 放到 `/ql/scripts/`
 - 单账号：设置 `BAILANJO_ACCOUNT`、`BAILANJO_PASSWORD` 与可选推送变量；执行 `ql_bailanjo.sh`
-- 多账号：设置 `BAILANJO_ACCOUNTS_JSON`、`BAILANJO_PASSWORDS_JSON`，在脚本内循环执行（串行更稳）
+- 多账号：设置 `ACCOUNTS_JSON`、`PASSWORDS_JSON`，在脚本内循环执行（串行更稳）
 
 ---
 
