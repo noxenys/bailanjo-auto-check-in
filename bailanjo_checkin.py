@@ -219,7 +219,11 @@ def run_checkin(account: str, password: str, headless: bool = True) -> dict:
 
 
 def build_text(res: dict) -> str:
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # 使用UTC+8时区
+    from datetime import datetime, timezone, timedelta
+    beijing_tz = timezone(timedelta(hours=8))
+    ts = datetime.now(beijing_tz).strftime("%Y-%m-%d %H:%M:%S")
+    
     status = "✅ 成功" if res.get("ok") else "❌ 失败"
     signed = "本次签到" if res.get("signed") else "已签到过/触发签到"
     added = res.get("added") or "-"
@@ -231,7 +235,7 @@ def build_text(res: dict) -> str:
         f"🚀 **Bailanjo Auto Check-in Notification**\n"
         f"\n"
         f"📊 **签到状态**: {status}\n"
-        f"⏰ **执行时间**: {ts}\n"
+        f"⏰ **执行时间**: {ts} (UTC+8)\n"
         f"🔔 **签到类型**: {signed}\n"
         f"💰 **余额增加**: {added} 元\n"
         f"💳 **当前余额**: {bal}\n"
