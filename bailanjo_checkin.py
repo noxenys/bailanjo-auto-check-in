@@ -90,8 +90,11 @@ async def _post_form(url: str, data: dict) -> bool:
 async def push_telegram(token: str, chat_id: str, text: str) -> bool:
     if not token or not chat_id:
         return False
+    # Telegram 默认不识别 **bold**，且 Markdown 模式对特殊字符要求严格容易报错
+    # 为了用户体验，这里直接移除 ** 符号，显示纯净文本
+    clean_text = text.replace("**", "")
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    return await _post_form(url, {"chat_id": chat_id, "text": text})
+    return await _post_form(url, {"chat_id": chat_id, "text": clean_text})
 
 async def push_serverchan(sendkey: str, title: str, desp: str) -> bool:
     if not sendkey:
