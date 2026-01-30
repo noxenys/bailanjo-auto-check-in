@@ -263,8 +263,16 @@ def build_text(res: dict) -> str:
     ts = datetime.now(beijing_tz).strftime("%Y-%m-%d %H:%M:%S")
     
     status = "✅ 成功" if res.get("ok") else "❌ 失败"
-    signed = "本次签到" if res.get("signed") else "已签到过/触发签到"
-    added = res.get("added") or "-"
+    is_signed = res.get("signed")
+    signed = "本次签到" if is_signed else "已签到过/触发签到"
+    
+    added_val = res.get("added")
+    if not added_val:
+        # 如果是已签到，说明本次无新增，显示 0；否则显示 -
+        added = "0" if not is_signed else "-"
+    else:
+        added = added_val
+        
     bal = res.get("balance") or "-"
     uid = res.get("uid") or "-"
     dia = res.get("diamonds") or "-"
@@ -277,8 +285,8 @@ def build_text(res: dict) -> str:
         f"📊 **签到状态**: {status}\n"
         f"⏰ **执行时间**: {ts} (UTC+8)\n"
         f"👤 **用户 UID**: {uid}\n"
-        f"� **累计钻石**: {dia}\n"
-        f"�� **签到类型**: {signed}\n"
+        f"💎 **累计钻石**: {dia}\n"
+        f"🔔 **签到类型**: {signed}\n"
         f"💰 **余额增加**: {added} 元\n"
         f"💳 **当前余额**: {bal}\n"
         f"📝 **详细信息**: {msg}\n"
