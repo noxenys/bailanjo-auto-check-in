@@ -103,7 +103,7 @@ async def push_pushplus(token: str, title: str, content: str) -> bool:
     if not token:
         return False
     url = "https://www.pushplus.plus/send"
-    return await _post_form(url, {"token": token, "title": title, "content": content})
+    return await _post_form(url, {"token": token, "title": title, "content": content, "template": "markdown"})
 
 async def push_bark(server_url: str, title: str, body: str) -> bool:
     if not server_url:
@@ -133,16 +133,27 @@ async def push_feishu(webhook: str, text: str) -> bool:
     data = {"msg_type": "text", "content": {"text": text}}
     return await _post_json(webhook, data)
 
-async def push_dingtalk(webhook: str, text: str) -> bool:
+async def push_dingtalk(webhook: str, text: str, title: str = "签到通知") -> bool:
     if not webhook:
         return False
-    data = {"msgtype": "text", "text": {"content": text}}
+    data = {
+        "msgtype": "markdown",
+        "markdown": {
+            "title": title,
+            "text": text
+        }
+    }
     return await _post_json(webhook, data)
 
 async def push_wework(webhook: str, text: str) -> bool:
     if not webhook:
         return False
-    data = {"msgtype": "text", "text": {"content": text}}
+    data = {
+        "msgtype": "markdown",
+        "markdown": {
+            "content": text
+        }
+    }
     return await _post_json(webhook, data)
 
 
@@ -361,7 +372,7 @@ async def push_all(res: dict, override_token: str = "", override_chat_id: str = 
         tasks.append(push_feishu(feishu, text))
         channel_names.append("飞书")
     if dingtalk:
-        tasks.append(push_dingtalk(dingtalk, text))
+        tasks.append(push_dingtalk(dingtalk, text, title))
         channel_names.append("钉钉")
     if wework:
         tasks.append(push_wework(wework, text))
