@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 青龙（QL）任务示例：在 QL 中添加此脚本为定时任务
+# Bailanjo Auto Check-in (青龙/QL 启动脚本)
 # 依赖：Python3、可联网环境
 
 # 安装依赖（只需首次或依赖缺失时执行）

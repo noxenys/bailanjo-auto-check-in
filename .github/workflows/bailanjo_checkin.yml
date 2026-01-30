@@ -1,4 +1,4 @@
-name: Bailanjo Daily Auto Check-in
+name: Bailanjo Auto Check-in
 
 on:
   schedule:
@@ -19,7 +19,7 @@ jobs:
 
       - name: Install deps
         run: |
-          pip install playwright httpx
+          pip install -r requirements.txt
           python -m playwright install chromium
 
       - name: Run check-in
@@ -37,3 +37,11 @@ jobs:
           WECHAT_WORK_WEBHOOK_URL: ${{ secrets.WECHAT_WORK_WEBHOOK_URL }}
         run: |
           python bailanjo_checkin.py --headless
+
+      - name: Upload Error Screenshot
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: error-screenshot
+          path: error_screenshot.png
+          retention-days: 3

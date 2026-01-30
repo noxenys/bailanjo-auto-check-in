@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Bailanjo.top 自动签到脚本 Plus 版（多渠道推送，余额增量解析）
+Bailanjo Auto Check-in (多渠道推送，余额增量解析)
 - 自动：打开用户页 → 输入账号/密码 → 查询 → 签到 → 自动确认弹窗
 - 解析：从弹窗文本中解析本次余额增加金额（例如："余额增加0.026元"）
 - 推送：Telegram / Server酱 / PushPlus / Bark / Discord / 飞书 / 钉钉 / 企业微信
@@ -25,11 +25,11 @@ Bailanjo.top 自动签到脚本 Plus 版（多渠道推送，余额增量解析�
 
 import os
 import sys
-import time
 import json
 import re
 import argparse
 import httpx
+from urllib.parse import quote
 from datetime import datetime
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
@@ -109,10 +109,12 @@ async def push_bark(server_url: str, title: str, body: str) -> bool:
     if not server_url:
         return False
     # 兼容 server_url 末尾不带斜杠
-    if server_url.endswith("/"):
-        url = server_url + title + "/" + body
-    else:
-        url = server_url + "/" + title + "/" + body
+    base_url = server_url.rstrip("/")
+    # URL 编码防止中文/特殊字符导致 400 错误
+    encoded_title = quote(title, safe="")
+    encoded_body = quote(body, safe="")
+    
+    url = f"{base_url}/{encoded_title}/{encoded_body}"
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             r = await client.get(url)
@@ -144,22 +146,42 @@ async def push_wework(webhook: str, text: str) -> bool:
     return await _post_json(webhook, data)
 
 
-def extract_balance(page) -> str:
+def extract_user_info(page) -> dict:
+    info = {"balance": "", "uid": "", "diamonds": ""}
     try:
         full_text = page.inner_text("body")
+        # 统一转小写方便查找
+        lower_text = full_text.lower()
+        
+        # 提取余额 (保留原始文本查找，因为"余额"是中文)
         idx = full_text.find("余额:")
         if idx != -1:
             tail = full_text[idx + len("余额:"):]
             first_line = tail.splitlines()[0].strip()
-            bal = first_line.split()[0]
-            return bal
+            info["balance"] = first_line.split()[0]
+            
+        # 提取 UID (支持 uid: 和 UID:)
+        # 页面实际可能是 "uid:00000009"
+        idx_uid = lower_text.find("uid:")
+        if idx_uid != -1:
+            tail = lower_text[idx_uid + len("uid:"):]
+            first_line = tail.splitlines()[0].strip()
+            info["uid"] = first_line.split()[0]
+            
+        # 提取钻石 (累计获得的钻石数量)
+        idx_dia = full_text.find("累计获得的钻石数量:")
+        if idx_dia != -1:
+            tail = full_text[idx_dia + len("累计获得的钻石数量:"):]
+            first_line = tail.splitlines()[0].strip()
+            info["diamonds"] = first_line.split()[0]
+            
     except Exception:
         pass
-    return ""
+    return info
 
 
 def run_checkin(account: str, password: str, headless: bool = True) -> dict:
-    result = {"ok": False, "message": "", "balance": "", "added": "", "signed": False}
+    result = {"ok": False, "message": "", "balance": "", "uid": "", "diamonds": "", "added": "", "signed": False}
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
@@ -168,13 +190,6 @@ def run_checkin(account: str, password: str, headless: bool = True) -> dict:
 
         dialog_message = None
 
-        def on_dialog(dialog):
-            nonlocal dialog_message
-            dialog_message = dialog.message
-            dialog.accept()
-
-        page.on("dialog", on_dialog)
-
         try:
             page.goto(USER_URL, timeout=30000)
             page.fill(SEL_ACCOUNT, account)
@@ -182,10 +197,21 @@ def run_checkin(account: str, password: str, headless: bool = True) -> dict:
             page.get_by_text("查询", exact=True).click()
             page.wait_for_selector(TEXT_UID, timeout=15000)
 
-            balance_before = extract_balance(page)
-            page.get_by_text("签到", exact=True).click()
-            time.sleep(2)
-            balance_after = extract_balance(page)
+            info_before = extract_user_info(page)
+            
+            # 使用 expect_event 等待弹窗，比 sleep(2) 更稳定
+            # 设置 5秒超时，如果网络慢可适当增加，或者如果某些情况不弹窗则会捕获 timeout
+            try:
+                with page.expect_event("dialog", timeout=10000) as dialog_info:
+                    page.get_by_text("签到", exact=True).click()
+                dialog = dialog_info.value
+                dialog_message = dialog.message
+                dialog.accept()
+            except PlaywrightTimeoutError:
+                # 如果没弹窗（极少见），或者超时
+                dialog_message = "未检测到签到弹窗（可能已签到或网络延迟）"
+
+            info_after = extract_user_info(page)
 
             msg = dialog_message or ""
             result["message"] = msg or "已触发签到。"
@@ -202,13 +228,25 @@ def run_checkin(account: str, password: str, headless: bool = True) -> dict:
             else:
                 result["ok"] = True
 
-            result["balance"] = balance_after or balance_before
+            result["balance"] = info_after["balance"] or info_before["balance"]
+            result["uid"] = info_after["uid"] or info_before["uid"]
+            result["diamonds"] = info_after["diamonds"] or info_before["diamonds"]
             result["added"] = parse_added_amount(msg)
 
         except PlaywrightTimeoutError:
+            try:
+                page.screenshot(path="error_screenshot.png")
+                print("❌ 发生超时，已保存截图至 error_screenshot.png")
+            except Exception:
+                pass
             result["ok"] = False
             result["message"] = "页面超时或元素未找到"
         except Exception as e:
+            try:
+                page.screenshot(path="error_screenshot.png")
+                print(f"❌ 发生异常，已保存截图至 error_screenshot.png")
+            except Exception:
+                pass
             result["ok"] = False
             result["message"] = f"异常: {e}"
         finally:
@@ -228,6 +266,8 @@ def build_text(res: dict) -> str:
     signed = "本次签到" if res.get("signed") else "已签到过/触发签到"
     added = res.get("added") or "-"
     bal = res.get("balance") or "-"
+    uid = res.get("uid") or "-"
+    dia = res.get("diamonds") or "-"
     msg = res.get("message") or ""
     
     # 标题用英文，内容保持中文
@@ -236,13 +276,15 @@ def build_text(res: dict) -> str:
         f"\n"
         f"📊 **签到状态**: {status}\n"
         f"⏰ **执行时间**: {ts} (UTC+8)\n"
-        f"🔔 **签到类型**: {signed}\n"
+        f"👤 **用户 UID**: {uid}\n"
+        f"� **累计钻石**: {dia}\n"
+        f"�� **签到类型**: {signed}\n"
         f"💰 **余额增加**: {added} 元\n"
         f"💳 **当前余额**: {bal}\n"
         f"📝 **详细信息**: {msg}\n"
         f"\n"
         f"---\n"
-        f"💡 Sent by bailanjo-auto-checkin"
+        f"💡 Sent by bailanjo-auto-check-in"
     )
 
 
@@ -251,7 +293,7 @@ async def push_all(res: dict, override_token: str = "", override_chat_id: str = 
     支持传入 Telegram 的覆盖 token/chat_id，以便多账号并行时区分接收者。
     """
     text = build_text(res)
-    title = "bailanjo 签到通知"
+    title = "Bailanjo Auto Check-in Notification"
 
     # 优先使用覆盖值，其次读取环境变量（兼容多种命名）
     tg_token = override_token or os.getenv(ENV_TG_TOKEN, "") or os.getenv("TG_BOT_TOKEN", "")
@@ -338,10 +380,11 @@ async def push_all(res: dict, override_token: str = "", override_chat_id: str = 
 
 
 def main():
-    parser = argparse.ArgumentParser(description="bailanjo.top 自动签到 Plus（支持多账号 JSON 批量）")
+    parser = argparse.ArgumentParser(description="Bailanjo Auto Check-in (支持多账号 JSON 批量)")
     parser.add_argument("--account", default=os.getenv("BAILANJO_ACCOUNT", ""))
     parser.add_argument("--password", default=os.getenv("BAILANJO_PASSWORD", ""))
-    parser.add_argument("--headless", action="store_true", help="无头浏览器运行")
+    parser.add_argument("--headless", dest="headless", action="store_true", default=True, help="无头浏览器运行（默认）")
+    parser.add_argument("--headed", dest="headless", action="store_false", help="显示浏览器（用于调试）")
     args = parser.parse_args()
 
     # 多账号 JSON：如果提供 ACCOUNTS_JSON / PASSWORDS_JSON，则按列表循环执行
@@ -370,7 +413,7 @@ def main():
 
         def worker(idx: int, u: str, p: str, chat_override: str = ""):
             try:
-                res = run_checkin(account=str(u), password=str(p), headless=args.headless or True)
+                res = run_checkin(account=str(u), password=str(p), headless=args.headless)
             except Exception as e:
                 # 单账号失败也要尽量推送失败报告
                 res = {"ok": False, "message": f"异常: {e}", "balance": "", "added": "", "signed": False}
@@ -395,7 +438,7 @@ def main():
         if not args.account or not args.password:
             print("请提供账号与密码（环境变量或命令行参数）")
             sys.exit(2)
-        res = run_checkin(account=args.account, password=args.password, headless=args.headless or True)
+        res = run_checkin(account=args.account, password=args.password, headless=args.headless)
         print(json.dumps(res, ensure_ascii=False))
         import asyncio
         asyncio.run(push_all(res))
